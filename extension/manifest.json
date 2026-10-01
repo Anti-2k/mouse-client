@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Mouse Client (survev.io)",
+  "version": "1.0.0",
+  "description": "A legit version of a client for survev.io. Right Shift opens the menu.",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://survev.io/*",
+        "*://*.survev.io/*"
+      ],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "MAIN",
+      "js": [
+        "src/00-loader.js",
+        "src/10-ctx.js",
+        "src/11-config.js",
+        "src/12-modules.js",
+        "src/13-items.js",
+        "src/14-skins-data.js",
+        "src/15-defs.js",
+        "src/16-overlay.js",
+        "src/17-net.js",
+        "src/20-skins.js",
+        "src/21-cosmetics.js",
+        "src/22-nullbinds.js",
+        "src/23-lagsmooth.js",
+        "src/24-puzzles.js",
+        "src/30-gui-css.js",
+        "src/31-gui.js",
+        "src/32-gui-skins.js",
+        "src/33-hud.js",
+        "src/34-hudstack.js",
+        "src/35-nethud.js",
+        "src/36-timerhud.js",
+        "src/37-recorder.js",
+        "src/99-boot.js"
+      ]
+    }
+  ]
+}

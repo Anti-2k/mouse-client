@@ -1,0 +1,15 @@
+# Pinned upstream survev checkout, created by `bun tools/fetch-survev.ts` for the dev tools.
+survev-pinned/
+
+# Release zips are built from extension/ and attached to GitHub releases, not committed.
+*.zip
+
+# Optional live-atlas cross-check for tools/gen-skins-data.py.
+assets/survev-repo-guns/
+
+.claude
+
+# General Node/Bun/Python noise, in case any other tooling gets added later.
+node_modules/
+__pycache__/
+*.log
