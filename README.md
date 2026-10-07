@@ -4,7 +4,7 @@ A legit version of a client for [survev.io](https://survev.io) (the open-source 
 unpacked Chromium extension. No build step, no bundler — it's plain JS that patches the game's own
 bundle in your browser at load time.
 
-**v1.0.0** — built and tagged against survev.io **v0.4.3** (build `6d25af64`). The main panel's
+**v1.0.1** — built and tagged against survev.io **v0.4.3** (build `6d25af64`). The main panel's
 footer shows this tag live and flags it amber if the running game has moved past it — see
 [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) if that happens.
 
@@ -34,7 +34,8 @@ A click-to-configure GUI (Right Shift to open), styled after survev's own menus:
 Plus two windows of their own:
 
 - **Skin Changer** — revert guns to their older art, on your screen only.
-- **Recorder** — records the tab to MP4 on its own hotkey.
+- **Recorder** — records the tab to MP4 on its own hotkey, and compresses recordings, or an MP4 you
+  pick, to just under a size limit (100 MB by default).
 
 Every module ships **off and unbound** — nothing does anything until you turn it on and, if you want,
 give it a hotkey. Full description of what each one does and how: **[`docs/MODULES.md`](docs/MODULES.md)**.

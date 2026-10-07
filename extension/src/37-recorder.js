@@ -25,6 +25,16 @@
 // Starting a recording closes every client window, then waits START_PAUSE_MS
 // before the first frame so they aren't caught half-closed. Stopping doesn't
 // reopen them.
+//
+// With "Compress recordings" on, a recording over the "Size limit" is
+// re-encoded to land just under it (38-recompress.js) before it's saved.
+// That takes a while - every pass decodes and encodes the whole video - so
+// the button reads "Compressing" until it's done and ignores the hotkey
+// meanwhile. If it can't be done (a WebM recording, or a limit too small for
+// its length), the original is saved instead and the status says why.
+// "Compress a file" runs the same thing on an MP4 picked from disk, such as
+// a recording saved with compressing off, and saves the result as
+// "<name>-compressed.mp4".
 
 (function () {
     "use strict";
@@ -99,6 +109,30 @@
             unit: "Mbps",
             hint: "Higher is sharper and bigger: 12 Mbps is about 90 MB a minute.",
         },
+        autoCompress: {
+            kind: "bool",
+            label: "Compress recordings",
+            default: true,
+            hint: "A recording bigger than the size limit is re-encoded after it stops, before it's saved.",
+        },
+        sizeLimit: {
+            kind: "number",
+            label: "Size limit",
+            default: 100,
+            min: 5,
+            max: 500,
+            step: 5,
+            unit: "MB",
+            hint: "What compressing fits a video under: it lands just under, around 97%, not far below. Very long ones also drop resolution to fit.",
+        },
+        compressFile: {
+            kind: "action",
+            label: "Compress a file",
+            buttonLabel: "Choose...",
+            default: null,
+            hint: "Compresses an MP4 this recorder saved earlier to the size limit, saving it as a new file next to the original name.",
+            onClick: chooseFile,
+        },
     };
 
     /** @type {Record<string, any>} */
@@ -117,8 +151,8 @@
     // --- State ------------------------------------------------------------
     /** asking: Chrome's share prompt is up. pausing: START_PAUSE_MS between
      * closing the windows and the first frame. saving: stopped, waiting on
-     * the recorder's last data.
-     * @type {"idle"|"asking"|"pausing"|"recording"|"saving"} */
+     * the recorder's last data. compressing: fitting it under the size limit.
+     * @type {"idle"|"asking"|"pausing"|"recording"|"saving"|"compressing"} */
     let state = "idle";
     /** @type {MediaStream | null} */
     let stream = null;
@@ -133,6 +167,8 @@
     let pauseTimer = null;
     /** @type {any} */
     let clockTimer = null;
+    /** Progress readout while compressing. */
+    let compressText = "";
 
     function streamLive() {
         return !!stream && stream.getVideoTracks().some((t) => t.readyState === "live");
@@ -142,7 +178,7 @@
         if (state === "idle") start();
         else if (state === "pausing") cancelStart();
         else if (state === "recording") stop();
-        // "asking" and "saving" ignore presses until they resolve.
+        // "asking", "saving" and "compressing" ignore presses until they resolve.
     }
 
     /** Size and frame-rate limits for the video track, from the settings.
@@ -317,7 +353,86 @@
             render();
             return;
         }
-        const name = fileBase + (type.indexOf("mp4") !== -1 ? ".mp4" : ".webm");
+        const isMp4 = type.indexOf("mp4") !== -1;
+        const name = fileBase + (isMp4 ? ".mp4" : ".webm");
+        if (!getSetting("autoCompress") || blob.size <= sizeLimit()) {
+            download(blob, name, "");
+            return;
+        }
+        if (!isMp4) {
+            download(blob, name, ", over the size limit: only MP4 can be compressed");
+            return;
+        }
+        compress(blob, name, function (e) {
+            download(blob, name, ", not compressed: " + ((e && e.message) || e));
+        });
+    }
+
+    function sizeLimit() {
+        return Number(getSetting("sizeLimit")) * 1048576;
+    }
+
+    /** Fits `blob` under the size limit and saves the result as `name`;
+     * `onFail` gets the error if that can't be done.
+     * @param {Blob} blob @param {string} name @param {(e: any) => void} onFail */
+    function compress(blob, name, onFail) {
+        state = "compressing";
+        compressText = "";
+        setStatus("Compressing " + formatSize(blob.size) + " to fit " + getSetting("sizeLimit") + " MB");
+        render();
+        MOUSE.recompress
+            .fitToSize(blob, sizeLimit(), function (/** @type {number} */ pass, /** @type {number} */ fraction) {
+                compressText = (pass > 1 ? "pass " + pass + ", " : "") + Math.floor(fraction * 100) + "%";
+                render();
+            })
+            .then(
+                /** @param {{blob: Blob, height: number, scaled: boolean}} res */
+                function (res) {
+                    state = "idle";
+                    download(
+                        res.blob,
+                        name,
+                        ", from " + formatSize(blob.size) + (res.scaled ? " at " + res.height + "p" : ""),
+                    );
+                },
+                /** @param {any} e */
+                function (e) {
+                    MOUSE.warn("recorder: compressing failed", e);
+                    state = "idle";
+                    onFail(e);
+                    render();
+                },
+            );
+    }
+
+    // "Compress a file": the picker is a detached file input, opened from
+    // the button's click so Chrome counts it as the user's own.
+    const filePicker = document.createElement("input");
+    filePicker.type = "file";
+    filePicker.accept = "video/mp4,.mp4";
+    filePicker.addEventListener("change", function () {
+        const file = filePicker.files && filePicker.files[0];
+        filePicker.value = "";
+        if (!file || state !== "idle") return;
+        if (file.size <= sizeLimit()) {
+            setStatus(file.name + " is already under " + getSetting("sizeLimit") + " MB");
+            return;
+        }
+        compress(file, file.name.replace(/\.[^.]*$/, "") + "-compressed.mp4", function (e) {
+            setStatus("Couldn't compress " + file.name + ": " + ((e && e.message) || e));
+        });
+    });
+
+    function chooseFile() {
+        if (state !== "idle") {
+            setStatus("Finish the current recording first");
+            return;
+        }
+        filePicker.click();
+    }
+
+    /** @param {Blob} blob @param {string} name @param {string} note */
+    function download(blob, name, note) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -328,14 +443,14 @@
         setTimeout(function () {
             URL.revokeObjectURL(url);
         }, 60000);
-        setStatus("Saved " + name + " (" + formatSize(blob.size) + ")");
+        setStatus("Saved " + name + " (" + formatSize(blob.size) + note + ")");
         render();
     }
 
     // A recording only exists in memory until it's saved. survev asks before
     // a reload only while in a match; this asks whenever one would be lost.
     window.addEventListener("beforeunload", function (e) {
-        if (state !== "recording" && state !== "saving") return;
+        if (state !== "recording" && state !== "saving" && state !== "compressing") return;
         e.preventDefault();
         e.returnValue = "";
     });
@@ -422,6 +537,7 @@
         pausing: "Starting...",
         recording: "Recording",
         saving: "Saving...",
+        compressing: "Compressing...",
     };
     function render() {
         btnLabel.textContent = BUTTON_LABELS[state];
@@ -434,6 +550,8 @@
         if (state === "recording") {
             clockText = formatClock(performance.now() - startedAt);
             if (bytes) clockText += " · " + formatSize(bytes);
+        } else if (state === "compressing") {
+            clockText = compressText;
         }
         clock.textContent = clockText;
         btn.title = state === "recording" ? "Stop recording" : state === "pausing" ? "Cancel" : "";

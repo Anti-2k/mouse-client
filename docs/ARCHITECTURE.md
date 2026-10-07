@@ -165,6 +165,16 @@ all if any other animation is running, and all either one does is pose bones for
 passing the sequence number through untouched, which is what keeps `data.animSeq != this.anim.seq`
 agreeing with the server about what has been seen.
 
+**Chrome's MediaRecorder MP4 is fragmented, with gaps.** It writes `ftyp`, a `moov` with empty sample
+tables and a `trex` per track, then one `moof`+`mdat` per second or so, each `moof` holding a `traf`
+per track (`tfhd` default-base-is-moof, a 64-bit `tfdt`, and a `trun` with per-sample durations and
+sizes). The `tfdt`s leave small gaps between fragments that the durations don't cover, so rewriting
+samples into different fragments has to take each duration from the next sample's time. The video is
+`avc3` Constrained Baseline with SPS/PPS both in the `avcC` and in-band. Chrome's software H.264
+encoder (OpenH264, the one WebCodecs gets on Linux) has a quality floor it won't go below whatever
+bitrate it's asked for, but it scales frames to its configured size by itself, and it doesn't support
+`bitrateMode: "quantizer"`.
+
 ## Project layout
 
 ```
@@ -196,6 +206,8 @@ extension/
     36-timerhud.js       match timers (50v50 promotions / Cobalt twins bunker), in the HUD stack
     37-recorder.js       tab recorder window - outside the module registry, so the master switch
                          never stops it; its hotkey is a 31-gui.js tool bind
+    38-recompress.js     MOUSE.recompress: re-encodes a finished MP4 recording to just under the
+                         recorder's size limit (WebCodecs, its own fragmented-MP4 reader/writer)
     99-boot.js           mounts the GUI once everything above has registered
   dev/
     gui-tune.js          NOT LOADED by manifest.json - sliders for the three

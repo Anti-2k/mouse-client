@@ -62,6 +62,14 @@ for why. That's deliberate, not a gap.
   Resolution or Frame rate.
 - It records what's on screen, so anything the client draws is in the video unless **Client enabled**
   is off, and so are client windows opened mid-recording.
+- Compressing only handles this recorder's own MP4s. A WebM recording (Chromium without H.264) is
+  saved at full size, and **Compress a file** refuses regular MP4s from other software (OBS, phones),
+  which keep their samples in a layout it doesn't read.
+- Compressing holds the original and the re-encoded copy in memory together and keeps the CPU busy
+  while it runs, so it's best left to finish between matches.
+- Below a certain bitrate, Chrome's H.264 encoder stops getting smaller, so a long recording squeezed
+  into a small limit comes out at a lower resolution, down to 240p. Under that it gives up and saves
+  the original.
 
 ## Match timers
 

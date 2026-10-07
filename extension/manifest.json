@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mouse Client (survev.io)",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A legit version of a client for survev.io. Right Shift opens the menu.",
   "content_scripts": [
     {
@@ -35,6 +35,7 @@
         "src/35-nethud.js",
         "src/36-timerhud.js",
         "src/37-recorder.js",
+        "src/38-recompress.js",
         "src/99-boot.js"
       ]
     }

@@ -37,7 +37,7 @@
         disabled: false,
         /** This client's own version. Bump this, TARGET and `version` in
          * manifest.json together when cutting a release. */
-        VERSION: "1.0.0",
+        VERSION: "1.0.1",
         /** The survev.io build this client release is built and tested
          * against. `build` is the full git commit survev.io embeds in its
          * own bundle as `clientGitVersion` (see the versionMatch regex

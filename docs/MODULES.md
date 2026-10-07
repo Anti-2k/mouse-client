@@ -246,6 +246,24 @@ switches size cleanly. Chromium builds without H.264 fall back to WebM. **Resolu
 larger tab is scaled down to fit, keeping its shape), **Frame rate** and **Bitrate** apply from the next
 recording on.
 
+With **Compress recordings** on (the default), a recording bigger than the **Size limit** (100 MB by
+default, 5–500) is re-encoded after you stop it, before it's saved, and lands just under the limit,
+around 97% of it: a 111 MB recording at 100 MB becomes about 97 MB, not 11. Only the video is
+re-encoded. The sound, frame timings and length stay exactly as recorded. The button reads
+**Compressing...** with a percentage meanwhile and ignores the hotkey until it's done. Re-encoding
+takes a while, because the whole video is decoded and encoded again (about a second for a few seconds
+of 720p in testing, so expect minutes for a long recording). A pass that misses runs again with the
+bitrate corrected, up to four passes. When the limit is too small for the recording's length even at
+the encoder's lowest quality, the resolution drops too, and the status says so (`... at 480p`). If it
+can't fit at all, or the recording is WebM, the original is saved and the status says why. MB here
+means 1024×1024 bytes, the same as the size readout.
+
+**Compress a file** → **Choose...** does the same to an MP4 on disk: say one saved with compressing
+off, or a clip you want under a smaller limit for somewhere else. It's saved as a new file,
+`<name>-compressed.mp4`, and the original is left alone. A file already under the limit is left as it
+is. It only reads this recorder's own MP4s (Chrome's fragmented MP4 with H.264). A regular MP4 from
+OBS, a phone or another recorder is refused with a message saying so.
+
 ## Turning everything off
 
 Two separate switches, for two different situations.
