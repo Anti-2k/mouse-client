@@ -4,7 +4,7 @@ A legit version of a client for [survev.io](https://survev.io) (the open-source 
 unpacked Chromium extension. No build step, no bundler — it's plain JS that patches the game's own
 bundle in your browser at load time.
 
-**v1.0.1** — built and tagged against survev.io **v0.4.3** (build `6d25af64`). The main panel's
+**v1.0.2** — built and tagged against survev.io **v0.4.3** (build `6d25af64`). The main panel's
 footer shows this tag live and flags it amber if the running game has moved past it — see
 [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) if that happens.
 

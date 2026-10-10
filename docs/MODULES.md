@@ -101,9 +101,14 @@ table and the building's own def names which entry applies — but which *named*
 obstacle in the world actually is isn't sent over the network at all, only "this is *a* puzzle piece
 belonging to building N". This module reconstructs that mapping from the building def's own geometry
 (the same 90°-step rotate-then-translate the server itself uses to place map objects) and matches
-each real obstacle to the closest expected slot. Progress is read straight off each matched piece's
-own networked on/off state, so a wrong-sequence reset (which the server broadcasts by switching every
-piece back off) is reflected automatically with no separate error-tracking needed here.
+each real obstacle to the closest expected slot. Progress is read off each matched piece's own
+networked on/off state, walking the order one pressed piece per step, so a name that repeats (the
+reserve vault's `1,2,3,4,2,5` over two separate "2" switches) needs a second "2" before it counts as
+done. Each piece's state is remembered while it's out of view — the server stops sending obstacles
+outside your view, and the saloon is taller than that, so walking from the red bottle to the orange
+one used to forget red was pressed. A wrong-sequence or idle reset switches every piece back off and
+bumps its button counter, so the first piece seen again with a new counter clears the remembered
+presses.
 
 **Puzzles that span two layers** are handled per node rather than per building. A puzzle's pieces do
 not all have to sit on the puzzle building's own layer: twin bunker splits its six switches three on

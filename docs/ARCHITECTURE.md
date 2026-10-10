@@ -139,9 +139,13 @@ medic, demo, assault, tank. But `shared/net/objectSerializeFns.ts` only ever sen
 `isPuzzlePiece` flag and its `parentBuildingId`, never the piece's own name, so the Puzzle helper
 recomputes each named piece's expected world position from the building def's local offsets and
 nearest-matches real obstacles to those slots. Progress then falls out for free: a piece's own
-networked `onOff` state is true once pressed, and the server's own wrong-sequence reset already flips
-every piece back to `onOff: false` over the network, which is all this module needs to snap its
-highlight back to the first step.
+networked `onOff` state is true once pressed, and the server's own wrong-sequence reset flips every
+piece back to `onOff: false` and bumps its `button.seq`. Two catches: piece names aren't unique within
+a puzzle (the reserve vault has two "2" switches, and its order presses "2" twice), so progress has to
+claim individual pieces rather than test names; and the server culls obstacles outside the player's
+view rect (`server/src/game/client.ts`, `delObjIds`), which a building as tall as the saloon exceeds,
+so pressed state has to be remembered across culling — with a changed `seq` on a piece that reads off
+as the sign a reset happened while it was out of view.
 
 **An outfit's own flags say everything about it; the game mode says nothing.**
 `shared/defs/gameObjects/outfitDefs.ts` marks role-granted skins `noDrop` — exactly nine of them, the

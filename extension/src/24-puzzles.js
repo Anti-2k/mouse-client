@@ -31,19 +31,23 @@
 // and `column` sit 1.75 units apart) and comfortably covers the ~0.016 unit
 // quantization writeMapPos already rounds positions to.
 //
-// "Which one is next" is read straight off each matched obstacle's own
-// networked button.onOff (true once you've flipped it) - the first name in
-// the order whose obstacle isn't yet onOff is "next", and the one before it
-// in the order is "current". This is a best-effort reconstruction, not a
-// mirror of the server's own `inputCode` progress (which is never sent to
-// the client at all): a button's onOff simply reflects whether it's
-// currently switched on, not whether pressing it was the objectively
-// correct next step. In ordinary play - pressing pieces in the order this
-// module is already showing you - the two agree. A reset (wrong sequence,
-// or the per-piece idle timeout) is invisible to this module except through
-// its real, networked effect: the server flips every piece's onOff back to
-// false, which snaps the highlight back to the first step on its own, with
-// no separate error-tracking needed here.
+// "Which one is next" is read off each matched obstacle's own networked
+// button.onOff (true once you've flipped it): the order is walked claiming
+// one pressed slot per step, and the first step with no pressed slot left
+// for its name is "next". Claiming slots instead of testing names is what
+// makes the reserve vault work - its order is 1,2,3,4,2,5 over two separate
+// "2" switches. This is a best-effort reconstruction, not a mirror of the
+// server's own `inputCode` progress (which is never sent to the client at
+// all): onOff only says a button is switched on, not that pressing it was
+// the correct next step. In ordinary play - pressing pieces in the order
+// this module is already showing you - the two agree. A reset (wrong
+// sequence, or the per-piece idle timeout) is seen through its real,
+// networked effect: the server flips every piece's onOff back to false.
+//
+// Each slot's state is remembered while its obstacle is out of view, since
+// the server culls obstacles outside your view rect and the saloon is
+// taller than it - see `states` below for that and for how a reset that
+// happened out of view is still caught.
 //
 // Decoy pieces (the saloon's barrel/gun/column, `modeBuildingDefs.ts`) do
 // carry `isPuzzlePiece`/`puzzlePiece` like real ones, so they show up in the
@@ -185,6 +189,57 @@
         return best;
     }
 
+    /**
+     * Last known state of every puzzle slot, per building. Needed because
+     * the server culls obstacles outside your view rect (server/src/game/
+     * client.ts sends delObjIds for them), and a puzzle building can be
+     * bigger than that rect: walking from the saloon's red bottle to its
+     * orange one deletes the red bottle client-side, and reading progress
+     * only off live obstacles then forgot it was ever pressed. So a slot
+     * keeps its onOff while out of view.
+     *
+     * A reset the player didn't see (wrong order, idle timeout) still has to
+     * clear those remembered presses. The server's resetPuzzle switches
+     * every piece off and bumps its button.seq, so any live piece that reads
+     * off with a seq different from the one last seen means a reset has
+     * happened since, and every slot not in view is cleared with it.
+     * @type {Map<number, {type: string, x: number, y: number, seen: boolean, clock: number, slots: Array<{onOff: boolean, seq: number | undefined, pressedAt: number}>}>}
+     */
+    const states = new Map();
+
+    /** @param {any} b @param {number} slotCount */
+    function stateFor(b, slotCount) {
+        let st = states.get(b.__id);
+        // Pool objects and ids are reused between buildings and games.
+        if (!st || st.type !== b.type || st.x !== b.pos.x || st.y !== b.pos.y || st.slots.length !== slotCount) {
+            st = { type: b.type, x: b.pos.x, y: b.pos.y, seen: false, clock: 0, slots: [] };
+            for (let i = 0; i < slotCount; i++) st.slots.push({ onOff: false, seq: undefined, pressedAt: 0 });
+            states.set(b.__id, st);
+        }
+        return st;
+    }
+
+    /** @param {any} st @param {Map<number, any>} live slot index -> obstacle */
+    function syncSlots(st, live) {
+        let reset = false;
+        live.forEach((o, j) => {
+            if (!o.button) return;
+            const slot = st.slots[j];
+            if (!o.button.onOff && slot.seq !== undefined && o.button.seq !== slot.seq) reset = true;
+        });
+        if (reset) {
+            for (let j = 0; j < st.slots.length; j++) st.slots[j].onOff = false;
+        }
+        live.forEach((o, j) => {
+            if (!o.button) return;
+            st.seen = true;
+            const slot = st.slots[j];
+            if (o.button.onOff && !slot.onOff) slot.pressedAt = ++st.clock;
+            slot.onOff = !!o.button.onOff;
+            slot.seq = o.button.seq;
+        });
+    }
+
     function onTick(dt, ctx) {
         void dt;
         if (!ctx.ready || !ctx.buildingPool || !MOUSE.mapDefs) return;
@@ -223,56 +278,69 @@
             }
             if (!expected.length) continue;
 
-            /** @type {Map<string, any[]>} name -> matched obstacle instance(s) */
-            const matched = new Map();
+            /** slot index -> the live obstacle sitting in it this tick */
+            const live = new Map();
             for (let i = 0; i < obstacles.length; i++) {
                 const o = obstacles[i];
                 if (!o.active || !o.isPuzzlePiece || o.parentBuildingId !== b.__id || !o.pos) continue;
-                let bestName = null;
+                let bestIdx = -1;
                 let bestDist = Infinity;
                 for (let j = 0; j < expected.length; j++) {
                     const d = Math.hypot(o.pos.x - expected[j].pos.x, o.pos.y - expected[j].pos.y);
                     if (d < bestDist) {
                         bestDist = d;
-                        bestName = expected[j].name;
+                        bestIdx = j;
                     }
                 }
-                if (bestName !== null && bestDist < 0.5) {
-                    if (!matched.has(bestName)) matched.set(bestName, []);
-                    matched.get(bestName).push(o);
-                }
+                if (bestIdx >= 0 && bestDist < 0.5) live.set(bestIdx, o);
             }
-            if (!matched.size) continue; // couldn't geometrically resolve any piece this tick
 
-            /** The live obstacle wins over the def's geometry for both
-             * position and layer when there is one - it is what the server
-             * actually placed. @param {string} name */
-            const nodeFor = (name) => {
-                const list = matched.get(name);
-                const e = expected.find((x) => x.name === name);
-                if (list && list.length) {
-                    const o = list[0];
-                    return { pos: o.pos, layer: typeof o.layer === "number" ? o.layer : e ? e.layer : b.layer };
-                }
-                return e ? { pos: e.pos, layer: e.layer } : null;
-            };
-            const isPressed = (name) => {
-                const list = matched.get(name);
-                return !!list && list.some((o) => o.button && o.button.onOff);
-            };
+            const state = stateFor(b, expected.length);
+            syncSlots(state, live);
+            if (!state.seen) continue; // no piece of this puzzle has been in view yet
 
+            // Walk the order claiming one pressed slot per step, earliest
+            // press first. Claiming slots rather than testing names is what
+            // lets a name repeat: the reserve vault's order is 1,2,3,4,2,5
+            // over two separate "2" switches, and the second "2" step is
+            // only done once a *second* "2" slot is on.
+            const claimed = new Set();
+            const pressedOrder = [];
+            for (let j = 0; j < expected.length; j++) {
+                if (state.slots[j].onOff) pressedOrder.push(j);
+            }
+            pressedOrder.sort((x, y) => state.slots[x].pressedAt - state.slots[y].pressedAt);
             let nextIdx = order.length;
+            let currentSlot = -1;
             for (let i = 0; i < order.length; i++) {
-                if (!isPressed(order[i])) {
+                const slot = pressedOrder.find((j) => !claimed.has(j) && expected[j].name === order[i]);
+                if (slot === undefined) {
                     nextIdx = i;
                     break;
                 }
+                claimed.add(slot);
+                currentSlot = slot;
             }
             if (nextIdx >= order.length) continue; // every step already reads as pressed
 
-            const next = nodeFor(order[nextIdx]);
-            const current = nextIdx > 0 ? nodeFor(order[nextIdx - 1]) : null;
-            if (!next) continue;
+            // Of the unpressed slots carrying the next name (more than one
+            // only for the vault's "2"), the server accepts any - point at
+            // the one nearest the step just pressed, or nearest you.
+            const from = currentSlot >= 0 ? expected[currentSlot].pos : activePlayer.pos;
+            let nextSlot = -1;
+            let nextDist = Infinity;
+            for (let j = 0; j < expected.length; j++) {
+                if (expected[j].name !== order[nextIdx] || state.slots[j].onOff) continue;
+                const d = Math.hypot(expected[j].pos.x - from.x, expected[j].pos.y - from.y);
+                if (d < nextDist) {
+                    nextDist = d;
+                    nextSlot = j;
+                }
+            }
+            if (nextSlot < 0) continue;
+
+            const next = expected[nextSlot];
+            const current = currentSlot >= 0 ? expected[currentSlot] : null;
 
             const nextHere = ctx.sameLayer(next.layer, myLayer);
             const currentHere = !!current && ctx.sameLayer(current.layer, myLayer);
