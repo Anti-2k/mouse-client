@@ -50,9 +50,10 @@
 // happened out of view is still caught.
 //
 // Decoy pieces (the saloon's barrel/gun/column, `modeBuildingDefs.ts`) do
-// carry `isPuzzlePiece`/`puzzlePiece` like real ones, so they show up in the
-// geometric match - but since their names are never in the solution order,
-// they're simply never looked up and can't affect the highlight.
+// carry `isPuzzlePiece`/`puzzlePiece` like real ones, but they're not
+// buttons, so they're skipped before the geometric match - their names are
+// never in the solution order anyway, and the `button` a pooled client
+// obstacle can carry over from its previous occupant must not be read.
 //
 // Layers. A puzzle's pieces do not all have to sit on the puzzle building's
 // own layer: bunker_twins is one puzzle whose six switches are split three
@@ -223,7 +224,6 @@
     function syncSlots(st, live) {
         let reset = false;
         live.forEach((o, j) => {
-            if (!o.button) return;
             const slot = st.slots[j];
             if (!o.button.onOff && slot.seq !== undefined && o.button.seq !== slot.seq) reset = true;
         });
@@ -231,7 +231,6 @@
             for (let j = 0; j < st.slots.length; j++) st.slots[j].onOff = false;
         }
         live.forEach((o, j) => {
-            if (!o.button) return;
             st.seen = true;
             const slot = st.slots[j];
             if (o.button.onOff && !slot.onOff) slot.pressedAt = ++st.clock;
@@ -282,7 +281,13 @@
             const live = new Map();
             for (let i = 0; i < obstacles.length; i++) {
                 const o = obstacles[i];
-                if (!o.active || !o.isPuzzlePiece || o.parentBuildingId !== b.__id || !o.pos) continue;
+                // isButton, not just `button`: the client's obstacle pool
+                // only rebuilds `button` when the reused object is a button
+                // again, so a non-button piece (the saloon's decoys) keeps
+                // the stale one of whatever held its slot before - and a
+                // decoy culled and recreated with a different stale seq
+                // reads exactly like a reset, wiping all saloon progress.
+                if (!o.active || !o.isPuzzlePiece || !o.isButton || o.parentBuildingId !== b.__id || !o.pos) continue;
                 let bestIdx = -1;
                 let bestDist = Infinity;
                 for (let j = 0; j < expected.length; j++) {
@@ -326,12 +331,16 @@
             // Of the unpressed slots carrying the next name (more than one
             // only for the vault's "2"), the server accepts any - point at
             // the one nearest the step just pressed, or nearest you.
-            const from = currentSlot >= 0 ? expected[currentSlot].pos : activePlayer.pos;
+            // ctx.playerPos(), not activePlayer.pos: the player's position
+            // field is mangled (m_pos), so .pos is undefined and threw here
+            // before anything was pressed. Null until the camera is found -
+            // then any matching slot will do.
+            const from = currentSlot >= 0 ? expected[currentSlot].pos : ctx.playerPos();
             let nextSlot = -1;
             let nextDist = Infinity;
             for (let j = 0; j < expected.length; j++) {
                 if (expected[j].name !== order[nextIdx] || state.slots[j].onOff) continue;
-                const d = Math.hypot(expected[j].pos.x - from.x, expected[j].pos.y - from.y);
+                const d = from ? Math.hypot(expected[j].pos.x - from.x, expected[j].pos.y - from.y) : 0;
                 if (d < nextDist) {
                     nextDist = d;
                     nextSlot = j;

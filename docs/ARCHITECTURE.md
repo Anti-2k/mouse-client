@@ -145,7 +145,10 @@ a puzzle (the reserve vault has two "2" switches, and its order presses "2" twic
 claim individual pieces rather than test names; and the server culls obstacles outside the player's
 view rect (`server/src/game/client.ts`, `delObjIds`), which a building as tall as the saloon exceeds,
 so pressed state has to be remembered across culling — with a changed `seq` on a piece that reads off
-as the sign a reset happened while it was out of view.
+as the sign a reset happened while it was out of view. Only button pieces may be read: the client's obstacle pool
+(`client/src/objects/obstacle.ts`) sets `obstacle.button` only when a reused object is a button again,
+so a non-button piece (the saloon's barrel/gun/column decoys) keeps the stale `button` of the slot's
+previous occupant — check `isButton`, never just `button`.
 
 **An outfit's own flags say everything about it; the game mode says nothing.**
 `shared/defs/gameObjects/outfitDefs.ts` marks role-granted skins `noDrop` — exactly nine of them, the
