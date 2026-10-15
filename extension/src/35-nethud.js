@@ -116,6 +116,13 @@
         return canvas;
     }
 
+    // The graph only moves when the ping snapshot below refreshes (it is a
+    // minute of history 140px wide), so it is redrawn then - or when its
+    // colour or window changes - rather than every frame.
+    let graphDrawnFor = /** @type {any} */ (null);
+    let graphDrawnColor = -1;
+    let graphDrawnSeconds = -1;
+
     function drawGraph(samples, graphSeconds, color) {
         const width = 140;
         const cv = ensureCanvas(width);
@@ -126,27 +133,33 @@
 
         const now = Date.now();
         const windowMs = graphSeconds * 1000;
+        let first = 0;
+        while (first < samples.length && now - samples[first].t > windowMs) first++;
+        if (samples.length - first < 2) return cv;
         let maxMs = 1;
-        const pts = [];
-        for (let i = 0; i < samples.length; i++) {
-            const age = now - samples[i].t;
-            if (age > windowMs) continue;
-            pts.push({ x: 1 - age / windowMs, ms: samples[i].ms });
+        for (let i = first; i < samples.length; i++) {
             if (samples[i].ms > maxMs) maxMs = samples[i].ms;
         }
-        if (pts.length < 2) return cv;
 
         c2d.strokeStyle = toCss(color);
         c2d.lineWidth = 1.5;
         c2d.beginPath();
-        for (let i = 0; i < pts.length; i++) {
-            const x = pts[i].x * width;
-            const y = CANVAS_H - (pts[i].ms / maxMs) * CANVAS_H;
-            if (i === 0) c2d.moveTo(x, y);
+        for (let i = first; i < samples.length; i++) {
+            const x = (1 - (now - samples[i].t) / windowMs) * width;
+            const y = CANVAS_H - (samples[i].ms / maxMs) * CANVAS_H;
+            if (i === first) c2d.moveTo(x, y);
             else c2d.lineTo(x, y);
         }
         c2d.stroke();
         return cv;
+    }
+
+    /** Compared against what was last written, not style.color, which reads
+     * back normalised to rgb(). @param {any} el @param {string} color */
+    function setColor(el, color) {
+        if (el.__mouseColor === color) return;
+        el.__mouseColor = color;
+        el.style.color = color;
     }
 
     function releaseAll() {
@@ -171,15 +184,15 @@
 
         if (settings.showFps) {
             const el = MOUSE.hudStack.row("fps", 10);
-            el.style.color = toCss(settings.normalColor);
-            el.textContent = "FPS: " + Math.round(displayFps);
+            setColor(el, toCss(settings.normalColor));
+            MOUSE.hudStack.setText(el, "FPS: " + Math.round(displayFps));
         } else {
             MOUSE.hudStack.release("fps");
         }
 
         if (settings.showPing) {
             const el = MOUSE.hudStack.row("ping", 20);
-            el.style.color = color;
+            setColor(el, color);
 
             let text;
             if (!snap.available) {
@@ -189,18 +202,23 @@
                 if (snap.interpBufferMs > 1) text += " (+" + Math.round(snap.interpBufferMs) + "ms buf)";
                 if (lagging) text += " · stalled " + Math.round(snap.stallMs) + "ms";
             }
-            el.textContent = text;
+            MOUSE.hudStack.setText(el, text);
         } else {
             MOUSE.hudStack.release("ping");
         }
 
         if (settings.showGraph && stats && stats.available && stats.pingSamples.length > 1) {
-            const cv = drawGraph(stats.pingSamples, settings.graphSeconds, lagging ? settings.lagColor : settings.normalColor);
-            if (!cv) {
+            const graphColor = lagging ? settings.lagColor : settings.normalColor;
+            if (graphDrawnFor !== snap || graphDrawnColor !== graphColor || graphDrawnSeconds !== settings.graphSeconds) {
+                graphDrawnFor = drawGraph(stats.pingSamples, settings.graphSeconds, graphColor) ? snap : null;
+                graphDrawnColor = graphColor;
+                graphDrawnSeconds = settings.graphSeconds;
+            }
+            if (!graphDrawnFor || !canvas) {
                 MOUSE.hudStack.release("pinggraph");
             } else {
                 const el = MOUSE.hudStack.row("pinggraph", 21);
-                if (cv.parentElement !== el) el.appendChild(cv);
+                if (canvas.parentElement !== el) el.appendChild(canvas);
             }
         } else {
             MOUSE.hudStack.release("pinggraph");

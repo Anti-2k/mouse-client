@@ -135,7 +135,7 @@ has passed since the last server update, and shows how much extra buffer Lag smo
 adding if that module is on, so the one readout answers both "am I lagging" and "is the smoothing
 doing anything about it". A small graph plots ping over a configurable recent window (30–90s); it is
 its own row in the stack rather than a canvas nested under the number, so the sparkline can be shown
-with the number switched off and vice versa. Both readouts update a few times a second off a short
+with the number switched off and vice versa. Both readouts, and the graph, update a few times a second off a short
 accumulation window rather than every rendered frame, since the underlying numbers don't change fast
 enough to be worth redrawing at 60fps and it just reads as flicker.
 

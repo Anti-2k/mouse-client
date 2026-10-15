@@ -170,14 +170,32 @@
      * on the main menu) and `display: block` the moment tryJoinGame
      * succeeds (`refreshUi`'s `this.active` flag) - so its computed display
      * is a direct, always-current answer to "is the match screen up right
-     * now", with no caching needed since App is the one thing that toggles
-     * it and does so exactly on the transitions that matter.
+     * now".
+     *
+     * Inside the tick loop both this and showingStats answer from a read
+     * taken once at the very top of the frame (see the tick loop below), not
+     * live. Reading computed style after anything has written to the DOM
+     * makes the browser recalculate style on the spot, and the HUD modules
+     * write every frame - so each caller used to cost a forced style pass.
+     * Outside the tick loop (an event handler, a module's onDisable) it
+     * reads live as before.
      */
     function inGameScreen() {
-        const el = document.getElementById("game-area-wrapper");
-        return !!el && getComputedStyle(el).display !== "none";
+        return inFrame ? frameInGame : isDisplayed("game-area-wrapper");
     }
     ctx.inGameScreen = inGameScreen;
+
+    /** @param {string} id */
+    function isDisplayed(id) {
+        const el = document.getElementById(id);
+        return !!el && getComputedStyle(el).display !== "none";
+    }
+
+    /** Set for the duration of the tick loop, with the two screen reads
+     * above as taken at the start of that frame. */
+    let inFrame = false;
+    let frameInGame = false;
+    let frameStats = false;
 
     /**
      * True while the game's own death/game-over screen (`#ui-stats`) is up -
@@ -188,8 +206,7 @@
      * screen too.
      */
     function showingStats() {
-        const el = document.getElementById("ui-stats");
-        return !!el && getComputedStyle(el).display !== "none";
+        return inFrame ? frameStats : isDisplayed("ui-stats");
     }
     ctx.showingStats = showingStats;
 
@@ -815,21 +832,58 @@
     }
     ctx.onTick = onTick;
 
+    /** Run every frame before any onTick listener, i.e. before this frame's
+     * DOM writes. This loop's requestAnimationFrame is registered ahead of
+     * the game's, so at this point the page is still laid out from the last
+     * paint and a layout read (getBoundingClientRect, offsetTop) is free;
+     * the same read after a HUD module has set its text forces a synchronous
+     * layout. Anything that measures the DOM every frame belongs here, and
+     * should only write from its onTick.
+     * @type {Array<(ctx: any) => void>} */
+    const frameStartListeners = [];
+    /** @param {(ctx: any) => void} fn */
+    function onFrameStart(fn) {
+        frameStartListeners.push(fn);
+    }
+    ctx.onFrameStart = onFrameStart;
+
+    /** Listeners run every frame and a throw usually repeats every frame, so
+     * these warns are rate-limited like 12-modules.js's per-module ones. */
+    let lastTickThrowLog = 0;
+    /** @param {string} what @param {any} e */
+    function warnThrow(what, e) {
+        const now = Date.now();
+        if (now - lastTickThrowLog < 5000) return;
+        lastTickThrowLog = now;
+        MOUSE.warn(what + " threw", e);
+    }
+
     let lastTime = performance.now();
     function frame(now) {
         const dt = Math.min((now - lastTime) / 1000, 0.25);
         lastTime = now;
 
         clearSuppressedInputs();
+        frameInGame = isDisplayed("game-area-wrapper");
+        frameStats = isDisplayed("ui-stats");
+        inFrame = true;
         resolve();
 
+        for (let i = 0; i < frameStartListeners.length; i++) {
+            try {
+                frameStartListeners[i](ctx);
+            } catch (e) {
+                warnThrow("frame-start listener", e);
+            }
+        }
         for (let i = 0; i < tickListeners.length; i++) {
             try {
                 tickListeners[i](dt, ctx);
             } catch (e) {
-                MOUSE.warn("tick listener threw", e);
+                warnThrow("tick listener", e);
             }
         }
+        inFrame = false;
 
         requestAnimationFrame(frame);
     }

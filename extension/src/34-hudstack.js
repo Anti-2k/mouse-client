@@ -84,7 +84,7 @@
             entry.order = order;
             resort(stack);
         }
-        entry.el.style.display = "";
+        if (entry.el.style.display) entry.el.style.display = "";
         return entry.el;
     }
     MOUSE.hudStack = MOUSE.hudStack || {};
@@ -96,29 +96,49 @@
      */
     function release(id) {
         const entry = rows.get(id);
-        if (entry) entry.el.style.display = "none";
+        if (entry && entry.el.style.display !== "none") entry.el.style.display = "none";
     }
     MOUSE.hudStack.release = release;
 
-    /** The last position actually written, so a normal frame is a rect read
-     * plus a string compare rather than a style write. */
-    let lastLayout = "";
-
-    function layout() {
-        const stack = document.getElementById(STACK_ID);
-        const topLeft = document.getElementById("ui-top-left");
-        if (!stack || !topLeft) return;
-        const rect = topLeft.getBoundingClientRect();
-        const key = rect.left + "/" + rect.bottom;
-        if (key === lastLayout) return;
-        lastLayout = key;
-        stack.style.left = rect.left + "px";
-        stack.style.top = rect.bottom + 8 + "px";
+    /** Sets a row's text only if it changed: a textContent write replaces the
+     * text node and dirties layout even when the text is the same.
+     * @param {HTMLElement} el @param {string} text */
+    function setText(el, text) {
+        if (el.textContent !== text) el.textContent = text;
     }
+    MOUSE.hudStack.setText = setText;
 
-    MOUSE.ctx.onTick(function (dt, ctx) {
-        void dt;
+    /** #ui-top-left's corner, measured at the start of the frame. */
+    let anchorLeft = 0;
+    let anchorBottom = 0;
+    let anchorMeasured = false;
+    /** The last position actually written, so a normal frame is a compare
+     * rather than a style write. */
+    let lastLeft = NaN;
+    let lastBottom = NaN;
+
+    // The read happens at frame start, before the HUD modules write their
+    // text for the frame - read after them, it forced a layout every frame
+    // (see ctx.onFrameStart in 10-ctx.js).
+    MOUSE.ctx.onFrameStart(function (ctx) {
+        anchorMeasured = false;
         if (!ctx.ready || rows.size === 0) return;
-        layout();
+        const topLeft = document.getElementById("ui-top-left");
+        if (!topLeft) return;
+        const rect = topLeft.getBoundingClientRect();
+        anchorLeft = rect.left;
+        anchorBottom = rect.bottom;
+        anchorMeasured = true;
+    });
+
+    MOUSE.ctx.onTick(function () {
+        if (!anchorMeasured) return;
+        const stack = document.getElementById(STACK_ID);
+        if (!stack) return;
+        if (anchorLeft === lastLeft && anchorBottom === lastBottom) return;
+        lastLeft = anchorLeft;
+        lastBottom = anchorBottom;
+        stack.style.left = anchorLeft + "px";
+        stack.style.top = anchorBottom + 8 + "px";
     });
 })();

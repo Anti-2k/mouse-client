@@ -88,38 +88,60 @@
         boostCounter.appendChild(boostNum);
     }
 
-    /** The last layout actually written, so this is a few property reads on
-     * a normal frame rather than three style writes. */
-    let lastLayout = "";
+    /** The last layout actually written, so this is a compare on a normal
+     * frame rather than three style writes. */
+    let lastTop = -1;
+    let lastHeight = -1;
+    /** The bar's box as measured at the start of this frame, or null. */
+    let barTop = 0;
+    let barHeight = 0;
+    let barMeasured = false;
 
     /**
-     * Sits the health number on the bar, measured rather than assumed.
+     * Measures the health bar - at frame start (ctx.onFrameStart), before
+     * anything has written to the DOM this frame, so the read never forces
+     * a layout of its own.
      *
      * offsetTop/offsetHeight are unscaled CSS pixels relative to the
      * offsetParent - which is #ui-health-container, the very box this
      * element is positioned inside. getBoundingClientRect would need the
      * game's own UI-scale transform undone first; these do not.
      */
+    MOUSE.ctx.onFrameStart(function () {
+        barMeasured = false;
+        if (!MOUSE.modules.isActive(MODULE_ID)) return;
+        const bar = document.getElementById("ui-health-actual");
+        if (!bar) return;
+        barTop = bar.offsetParent === document.getElementById("ui-health-container") ? bar.offsetTop : 0;
+        barHeight = bar.offsetHeight || HEALTH_BAR_HEIGHT;
+        barMeasured = true;
+    });
+
+    /** Sits the health number on the bar, measured rather than assumed. */
     function layoutHealthNum() {
         const el = document.getElementById("mouse-hud-health-num");
-        const bar = document.getElementById("ui-health-actual");
-        const container = document.getElementById("ui-health-container");
-        if (!el || !bar) return;
-        const top = bar.offsetParent === container ? bar.offsetTop : 0;
-        const height = bar.offsetHeight || HEALTH_BAR_HEIGHT;
-        const key = top + "/" + height;
-        if (key === lastLayout) return;
-        lastLayout = key;
-        el.style.top = top + "px";
-        el.style.height = height + "px";
+        if (!el || !barMeasured) return;
+        if (barTop === lastTop && barHeight === lastHeight) return;
+        lastTop = barTop;
+        lastHeight = barHeight;
+        el.style.top = barTop + "px";
+        el.style.height = barHeight + "px";
         el.style.transform = "translateY(" + HEALTH_NUM_OFFSET + "px)";
     }
 
+    /** Text nodes are replaced on every textContent write, which dirties
+     * layout even when the text is the same, so only write a change.
+     * @param {HTMLElement} el @param {string} text */
+    function setText(el, text) {
+        if (el.textContent !== text) el.textContent = text;
+    }
+
     function setVisible(visible) {
+        const display = visible ? "" : "none";
         const healthNum = document.getElementById("mouse-hud-health-num");
         const boostNum = document.getElementById("mouse-hud-boost-num");
-        if (healthNum) healthNum.style.display = visible ? "" : "none";
-        if (boostNum) boostNum.style.display = visible ? "" : "none";
+        if (healthNum && healthNum.style.display !== display) healthNum.style.display = display;
+        if (boostNum && boostNum.style.display !== display) boostNum.style.display = display;
     }
 
     function onTick(dt, ctx) {
@@ -139,8 +161,8 @@
         if (healthNum && boostNum) {
             layoutHealthNum();
             setVisible(true);
-            healthNum.textContent = String(Math.ceil(ctx.ui2.newState.health));
-            boostNum.textContent = String(Math.ceil(ctx.ui2.newState.boost));
+            setText(healthNum, String(Math.ceil(ctx.ui2.newState.health)));
+            setText(boostNum, String(Math.ceil(ctx.ui2.newState.boost)));
         }
     }
 

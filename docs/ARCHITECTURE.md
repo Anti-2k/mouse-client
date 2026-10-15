@@ -82,7 +82,19 @@ without an extra check they'd keep showing the last match's frozen health/ping/t
 main menu. `ctx.inGameScreen()` is that extra check: `client/src/main.ts`'s App toggles
 `#game-area-wrapper` between `display: none` on the menu and `display: block` the instant a match is
 actually joined, so reading that one computed style is a direct, always-current answer to "is the
-match screen up right now" — independent of anything cached off `game`.
+match screen up right now" — independent of anything cached off `game`. Inside the tick loop it (and
+`ctx.showingStats()`) answers from one read taken at the top of the frame — see the next point.
+
+**Read the DOM at the start of the frame, write it during the tick.** The shared tick loop's
+`requestAnimationFrame` is registered before the game's, so when it starts the page is still laid out
+from the last paint and a layout or computed-style read costs nothing. The same read made after a HUD
+module has set its text that frame forces the browser to recalculate style or layout on the spot, and
+with several modules asking `inGameScreen()` and the HUD stack measuring `#ui-top-left`, that was
+several forced passes every frame. So the two screen checks are read once per frame up front,
+anything that measures the DOM every frame does it from `ctx.onFrameStart` (run after `resolve()`,
+before any `onTick`), and the HUD readouts only write text, colour or display when the value actually
+changed — a `textContent` write replaces the text node and dirties layout even when the text is the
+same.
 
 **One module throwing doesn't stop the others.** `12-modules.js` drives every enabled module's
 `onTick` from one shared frame callback. Each module ticks inside its own try/catch, so a throw in one

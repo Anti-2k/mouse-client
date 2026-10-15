@@ -79,6 +79,8 @@
      * Keyed by the version's label since picks are stored by label too -
      * see setPickValue. */
     const builtTextures = new Map();
+    /** builtTextures keys whose SVG is being decoded right now. @type {Set<string>} */
+    const buildingTextures = new Set();
 
     /** "<gunId>|<slot>" -> the version label currently patched into the live
      * def, or null for "reverted to the game's own". applySlot re-runs while
@@ -663,7 +665,11 @@
             // The install is asynchronous (the SVG has to be decoded), so it
             // can't report readiness back to this call - it retries itself
             // through the bootstrap tick instead, by leaving `bootstrapped`
-            // alone until an install actually lands.
+            // alone until an install actually lands. That tick calls this
+            // every frame until then, hence the in-flight check: each call
+            // used to start another decode and upload of the same art.
+            if (buildingTextures.has(cacheKey)) continue;
+            buildingTextures.add(cacheKey);
             svgToTexture(svg)
                 .then(function (tex) {
                     builtTextures.set(cacheKey, tex);
@@ -671,6 +677,9 @@
                 })
                 .catch(function (e) {
                     MOUSE.warn("skins: failed to build texture for " + spriteName, e);
+                })
+                .finally(function () {
+                    buildingTextures.delete(cacheKey);
                 });
         }
         return ready;

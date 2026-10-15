@@ -150,7 +150,7 @@
             MOUSE.hudStack.release("timer");
             return;
         }
-        MOUSE.hudStack.row("timer", 30).textContent = text;
+        MOUSE.hudStack.setText(MOUSE.hudStack.row("timer", 30), text);
     }
 
     MOUSE.modules.register({

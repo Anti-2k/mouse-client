@@ -37,7 +37,7 @@
         disabled: false,
         /** This client's own version. Bump this, TARGET and `version` in
          * manifest.json together when cutting a release. */
-        VERSION: "1.0.3",
+        VERSION: "1.0.4",
         /** The survev.io build this client release is built and tested
          * against. `build` is the full git commit survev.io embeds in its
          * own bundle as `clientGitVersion` (see the versionMatch regex
@@ -315,7 +315,8 @@
         });
     }
 
-    const observer = new MutationObserver(function (mutations) {
+    /** @param {MutationRecord[]} mutations */
+    function onMutations(mutations) {
         for (let i = 0; i < mutations.length; i++) {
             const addedNodes = mutations[i].addedNodes;
             for (let j = 0; j < addedNodes.length; j++) {
@@ -335,9 +336,24 @@
                 }
             }
         }
-    });
+    }
 
+    const observer = new MutationObserver(onMutations);
     observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    // The entry script is in the page's own HTML, so once the document has
+    // been parsed there is nothing left for this to catch - and left
+    // running, it is called for every node the game's UI (and the HUD
+    // modules) ever inserts, for the rest of the session. Records still
+    // queued at that point are handled before letting go.
+    document.addEventListener(
+        "DOMContentLoaded",
+        function () {
+            onMutations(observer.takeRecords());
+            observer.disconnect();
+        },
+        { once: true },
+    );
 
     w.__MOUSE.log("loader installed, waiting for the game bundle");
 })();

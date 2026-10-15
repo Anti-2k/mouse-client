@@ -159,7 +159,7 @@
      * @param {any} fallback
      */
     function getSetting(id, key, fallback) {
-        return config.get(basePath(id) + ".settings." + key, fallback);
+        return config.getModuleSetting(id, key, fallback);
     }
 
     /**

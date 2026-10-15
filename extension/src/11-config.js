@@ -112,6 +112,22 @@
             return node === undefined ? fallback : node;
         },
         /**
+         * The same as get("modules." + id + ".settings." + key, fallback),
+         * without building and splitting a path string. Every module reads
+         * its settings every frame, so that was a few thousand throwaway
+         * strings and arrays a second for the garbage collector.
+         * @param {string} id
+         * @param {string} key
+         * @param {any} [fallback]
+         */
+        getModuleSetting(id, key, fallback) {
+            const modules = store.modules;
+            const mod = modules && modules[id];
+            const settings = mod && mod.settings;
+            const value = settings ? settings[key] : undefined;
+            return value === undefined ? fallback : value;
+        },
+        /**
          * Writes a value at a dotted path, creating intermediate objects as
          * needed, and schedules a debounced save.
          * @param {string} path
